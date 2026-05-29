@@ -16,7 +16,7 @@ from hmm_engine import causal_hmm_regimes
 from strategy import generate_signals
 from backtester import walk_forward, get_asset_profile
 from signal_utils import signal_to_action
-from trading_state import load_trading_state, load_intraday_state
+from trading_state import load_trading_state, load_intraday_state, load_aggressive_state
 
 # Hyperliquid symbol map for the live trading panel
 HL_TICKER_MAP = {
@@ -507,6 +507,112 @@ if _intraday:
     if _id_is_halted:
         reason = _intraday.get("halt_reason", "Daily drawdown limit reached")
         st.warning(f"Intraday trading paused today: {reason}. Will resume tomorrow.")
+
+
+# ── Aggressive Trading (Hyperliquid, 30m 2-pole oscillator + pyramiding) ────
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_aggressive_state():
+    return load_aggressive_state()
+
+_agg = _cached_aggressive_state()
+
+if _agg:
+    st.markdown("---")
+    st.markdown("### Aggressive Trading (30m) — Hyperliquid")
+    st.caption("Tighter thresholds, pyramiding, tighter ATR stops. Highest trade frequency.")
+
+    _ag_equity = _agg.get("last_equity", 0.0)
+    _ag_last_run = _agg.get("last_run", "—")
+    _ag_halted = _agg.get("halted_today")
+    _ag_today = pd.Timestamp.utcnow().strftime("%Y-%m-%d")
+    _ag_is_halted = _ag_halted == _ag_today
+    _ag_positions = _agg.get("open_positions", {}) or {}
+    _ag_history = _agg.get("history", []) or []
+    _ag_signals = _agg.get("last_signals", {}) or {}
+    _ag_pyramids = _agg.get("pyramid_state", {}) or {}
+
+    _ag_status_color = "#f85149" if _ag_is_halted else "#3fb950"
+    _ag_status_label = "PAUSED (Daily DD)" if _ag_is_halted else "ACTIVE"
+
+    ac1, ac2, ac3, ac4 = st.columns(4)
+    with ac1:
+        st.markdown(
+            f"""<div class="live-card">
+                <div class="live-label">Aggressive Status</div>
+                <div class="live-value" style="color:{_ag_status_color};">{_ag_status_label}</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with ac2:
+        st.markdown(
+            f"""<div class="live-card">
+                <div class="live-label">Account Equity</div>
+                <div class="live-value neu">${_ag_equity:,.2f}</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with ac3:
+        st.markdown(
+            f"""<div class="live-card">
+                <div class="live-label">Open Positions</div>
+                <div class="live-value neu">{len(_ag_positions)}</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with ac4:
+        st.markdown(
+            f"""<div class="live-card">
+                <div class="live-label">Last Run</div>
+                <div class="live-value" style="font-size:0.95rem;color:#c9d1d9;">{_ag_last_run[:16].replace('T',' ') if _ag_last_run != '—' else '—'}</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+    if _ag_positions:
+        st.markdown("#### Open Aggressive Positions")
+        rows = []
+        for coin, p in _ag_positions.items():
+            size = p.get("size", 0)
+            pyramid_count = _ag_pyramids.get(coin, 0)
+            rows.append({
+                "Asset": coin,
+                "Side": "LONG" if size > 0 else "SHORT",
+                "Size": abs(size),
+                "Entry Price": f"${p.get('entry_px', 0):,.2f}",
+                "Pyramids": pyramid_count,
+                "Unrealized PnL": f"${p.get('unrealized_pnl', 0):,.2f}",
+            })
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+    if _ag_signals:
+        st.markdown("#### Current Aggressive Signals (30m)")
+        sig_rows = []
+        for tkr, info in _ag_signals.items():
+            sig_rows.append({
+                "Asset": tkr.replace("-USD", "").replace("20947", ""),
+                "Action": info.get("action", "").replace("_", " ").upper(),
+                "Price": f"${info.get('price', 0):,.2f}",
+                "Oscillator": f"{info.get('osc', 0):+.3f}",
+            })
+        st.dataframe(pd.DataFrame(sig_rows), width="stretch", hide_index=True)
+
+    if _ag_history:
+        st.markdown("#### Recent Aggressive Trades")
+        hist_df = pd.DataFrame(_ag_history[-25:][::-1])
+        keep = [c for c in ["timestamp", "ticker", "action", "status", "fill_size", "fill_price", "reason"] if c in hist_df.columns]
+        hist_df = hist_df[keep]
+        if "timestamp" in hist_df.columns:
+            hist_df["timestamp"] = hist_df["timestamp"].str[:16].str.replace("T", " ")
+        if "fill_price" in hist_df.columns:
+            hist_df["fill_price"] = hist_df["fill_price"].apply(
+                lambda x: f"${x:,.2f}" if pd.notna(x) and x else "—"
+            )
+        st.dataframe(hist_df, width="stretch", hide_index=True)
+
+    if _ag_is_halted:
+        reason = _agg.get("halt_reason", "Daily drawdown limit reached")
+        st.warning(f"Aggressive trading paused today: {reason}. Will resume tomorrow.")
 
 
 # ── Regime colour map ───────────────────────────────────────────────────────

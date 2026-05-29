@@ -12,6 +12,7 @@ import requests
 
 DAILY_STATE_FILE = "trading_state.json"
 INTRADAY_STATE_FILE = "intraday_state.json"
+AGGRESSIVE_STATE_FILE = "aggressive_state.json"
 
 
 def _fetch_gist(gist_id: str, filename: str) -> dict:
@@ -44,6 +45,12 @@ def load_intraday_state() -> dict:
     """Intraday bot state."""
     gist_id = os.environ.get("INTRADAY_GIST_ID") or _streamlit_secret("INTRADAY_GIST_ID")
     return _fetch_gist(gist_id, INTRADAY_STATE_FILE)
+
+
+def load_aggressive_state() -> dict:
+    """Aggressive bot state."""
+    gist_id = os.environ.get("AGGRESSIVE_GIST_ID") or _streamlit_secret("AGGRESSIVE_GIST_ID")
+    return _fetch_gist(gist_id, AGGRESSIVE_STATE_FILE)
 
 
 def _streamlit_secret(key: str):

@@ -1,0 +1,38 @@
+name: Execute Aggressive
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'    # Every 30 minutes
+  workflow_dispatch: {}
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Execute aggressive trades on Hyperliquid
+        run: python aggressive_executor.py
+        env:
+          HL_PRIVATE_KEY: ${{ secrets.HL_PRIVATE_KEY }}
+          HL_ACCOUNT_ADDRESS: ${{ secrets.HL_ACCOUNT_ADDRESS }}
+          HL_TESTNET: ${{ vars.HL_TESTNET }}
+          AGGRESSIVE_CAPITAL: ${{ vars.AGGRESSIVE_CAPITAL }}
+          AGGRESSIVE_DD_PCT: ${{ vars.AGGRESSIVE_DD_PCT }}
+          AGGRESSIVE_MAX_POSITIONS: ${{ vars.AGGRESSIVE_MAX_POSITIONS }}
+          AGGRESSIVE_KILL_SWITCH: ${{ vars.AGGRESSIVE_KILL_SWITCH }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          AGGRESSIVE_GIST_ID: ${{ secrets.AGGRESSIVE_GIST_ID }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NOTIFY_EMAILS: ${{ secrets.NOTIFY_EMAILS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
