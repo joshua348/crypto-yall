@@ -7,6 +7,25 @@ A multi-strategy algorithmic trading system for crypto perpetual futures on Hype
 
 ---
 
+## Quick Links by Role
+
+### If you're **Josh** (or a non-technical operator)
+
+Start here. These are written in plain English with click-by-click instructions.
+
+| Guide | When to read |
+|-------|--------------|
+| [docs/QUICKSTART.md](docs/QUICKSTART.md) | Daily operations: checking on bots, pausing them, understanding alerts |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | When something looks wrong and you need to figure out what to do |
+| [docs/ADDING_COMMUNITY_USERS.md](docs/ADDING_COMMUNITY_USERS.md) | **Important**: honest explanation of what's possible (and not) for community rollout |
+| [docs/MAINNET_LAUNCH.md](docs/MAINNET_LAUNCH.md) | Step-by-step for going from testnet to real money |
+
+### If you're a **developer or technical operator**
+
+The rest of this README is the deep technical reference. Read on.
+
+---
+
 ## Table of Contents
 
 1. [System Overview](#1-system-overview)
