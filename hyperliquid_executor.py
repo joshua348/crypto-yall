@@ -468,13 +468,16 @@ def _send_email(results: list[dict], status_summary: str):
     summary = f"{len(results)} trade(s)" if results else "No trades"
     msg["Subject"] = f"[Crypto Y'all] Execution: {summary}"
     msg["From"] = user
-    msg["To"] = ", ".join(recipient_list)
+    msg["To"] = user
+msg["Bcc"] = ", ".join(
+    email for email in recipient_list if email.lower() != user.lower()
+)
     msg.attach(MIMEText(html, "html"))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(user, password)
         server.send_message(msg)
-    print(f"Email sent to {recipient_list}")
+    print(f"Email sent to {len(recipient_list)} recipient(s) via BCC")
 
 
 def _send_telegram(results: list[dict], status_summary: str):
