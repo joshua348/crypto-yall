@@ -203,16 +203,15 @@ def send_email(transitions: list[dict]):
     msg["Subject"] = f"[Crypto Y'all] Signal Alert: {', '.join(t['name'].split(' (')[0] + ' ' + t['action'] for t in transitions)}"
     msg["From"] = user
     msg["To"] = user
-msg["Bcc"] = ", ".join(
-    email for email in recipient_list if email.lower() != user.lower()
-)
+    msg["Bcc"] = ", ".join(
+        email for email in recipient_list if email.lower() != user.lower()
+    )
     msg.attach(MIMEText(html, "html"))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(user, password)
         server.send_message(msg)
     print(f"Email sent to {len(recipient_list)} recipient(s) via BCC")
-
 def send_telegram(transitions: list[dict]):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_ids_raw = os.environ.get("TELEGRAM_CHAT_ID")
