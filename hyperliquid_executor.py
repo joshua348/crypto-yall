@@ -439,7 +439,10 @@ def _send_email(results: list[dict], status_summary: str):
         return
 
     recipient_list = [e.strip() for e in recipients.split(",")]
-
+    subscriber_list = [
+        email for email in recipient_list if email.lower() != user.lower()
+    ]
+    has_filled_trade = any(r.get("status") == "filled" for r in results)
     rows = ""
     for r in results:
         status_color = "#1f883d" if r.get("status") == "filled" else "#cf222e"
