@@ -60,14 +60,26 @@ ASSET_PROFILES = {
     },
 }
 
+# Controlled live experiment:
+# Permit shorts only for specifically listed mid-cap assets.
+ASSET_SHORT_OVERRIDES = {
+    "SOL-USD": True,
+}
+
 
 def get_asset_profile(ticker: str) -> dict:
-    """Return the profile dict for a given ticker."""
+    """Return an independent profile dict for a given ticker."""
     for profile in ASSET_PROFILES.values():
         if ticker in profile["tickers"]:
-            return profile
+            resolved_profile = profile.copy()
+            resolved_profile["allow_short"] = ASSET_SHORT_OVERRIDES.get(
+                ticker,
+                resolved_profile["allow_short"],
+            )
+            return resolved_profile
+
     # Default to large_cap if unknown
-    return ASSET_PROFILES["large_cap"]
+    return ASSET_PROFILES["large_cap"].copy()
 
 
 @dataclass
