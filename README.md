@@ -960,3 +960,4 @@ gh run view <RUN_ID> --log
 ---
 
 *Last updated: handoff version, June 2026*
+Maintenance check: October 6, 2026. Trading configuration unchanged.
