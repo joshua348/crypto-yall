@@ -315,7 +315,45 @@ def get_size_decimals(info, coin: str) -> int:
     for universe in meta.get("universe", []):
         if universe["name"] == coin:
             return int(universe["szDecimals"])
-    return 3  # safe default
+    raise ValueError(f"Missing size precision for {coin}")
+
+
+def entry_size(info, exchange, coin, capital, leverage, size_pct):
+    """Size new exposure to >= $25 at the quoted mid, respecting available margin."""
+    from decimal import ROUND_UP
+    mid = Decimal(str(get_mid_price(info, coin)))
+    budget = Decimal(str(capital))
+    lev = Decimal(str(leverage))
+    pct = Decimal(str(size_pct))
+    if not all(v.is_finite() and v > 0 for v in (mid, budget, lev, pct)):
+        raise ValueError("Invalid price, capital, leverage, or size percentage")
+    actual_lev = int(leverage)
+    if actual_lev < 1:
+        raise ValueError("Invalid exchange leverage")
+    decimals = get_size_decimals(info, coin)
+    if not 0 <= decimals <= 8:
+        raise ValueError("Invalid size precision")
+    quantum = Decimal("1").scaleb(-decimals)
+    target = max(budget * pct * lev, Decimal("25"))
+    size = (target / mid).quantize(quantum, rounding=ROUND_DOWN)
+    if size * mid < Decimal("25"):
+        size = (Decimal("25") / mid).quantize(quantum, rounding=ROUND_UP)
+    notional = size * mid
+    # Buffer matches the SDK's existing 5% market-order slippage plus fees.
+    required = notional / Decimal(actual_lev) * Decimal("1.06")
+    address = exchange.account_address
+    available = Decimal(str(info.user_state(address)["withdrawable"]))
+    if not available.is_finite() or required > available or required > budget:
+        raise ValueError("Insufficient available margin or configured capital for entry")
+    return float(size)
+
+
+def execution_summary(results, equity):
+    filled = sum(r.get("status") == "filled" for r in results)
+    errors = sum(r.get("status") in ("error", "unknown") for r in results)
+    skipped = sum(r.get("status") == "skipped" for r in results)
+    return (f"{len(results)} decision(s): {filled} filled, {errors} failed/unconfirmed, "
+            f"{skipped} skipped | Equity: ${equity:,.2f}")
 
 
 def execute_trade(info, exchange, trade: dict, capital: float, leverage: float) -> dict:
@@ -327,20 +365,18 @@ def execute_trade(info, exchange, trade: dict, capital: float, leverage: float) 
         return _parse_response(trade, resp, info, coin)
 
     # Open new position: size = (capital * 0.01 * leverage) / price
-    mid = get_mid_price(info, coin)
-    notional = capital * POSITION_SIZE_PCT * leverage
-    raw_size = notional / mid
-    sz_decimals = get_size_decimals(info, coin)
-    size = round_size(raw_size, sz_decimals)
-
-    if size <= 0:
-        return {**trade, "status": "skipped", "reason": "Size rounded to zero"}
-
-    # Set leverage before opening (cross margin)
     try:
-        exchange.update_leverage(int(leverage), coin, True)
+        size = entry_size(info, exchange, coin, capital, leverage, POSITION_SIZE_PCT)
+    except (ValueError, KeyError, TypeError, ArithmeticError) as e:
+        return {**trade, "status": "skipped", "reason": str(e)}
+
+    # Do not open at an unintended leverage if the exchange rejects the setting.
+    try:
+        leverage_result = exchange.update_leverage(int(leverage), coin, True)
+        if not isinstance(leverage_result, dict) or leverage_result.get("status") != "ok":
+            return {**trade, "status": "error", "error": f"Leverage update rejected: {leverage_result}"}
     except Exception as e:
-        print(f"Warning: could not set leverage for {coin}: {e}")
+        return {**trade, "status": "error", "error": f"Leverage update failed: {e}"}
 
     is_buy = trade["action"] == "open_long"
     resp = exchange.market_open(coin, is_buy, size)
@@ -468,7 +504,7 @@ def _send_email(results: list[dict], status_summary: str):
     """
 
     msg = MIMEMultipart("alternative")
-    summary = f"{len(results)} trade(s)" if results else "No trades"
+    summary = execution_summary(results, equity)
     msg["Subject"] = f"[Crypto Y'all] Execution: {summary}"
     msg["From"] = user
     msg["To"] = user
@@ -619,7 +655,12 @@ def main():
 
     summary = f"{len(results)} trade(s) executed | Equity: ${equity:,.2f}"
     send_execution_notifications(results, summary)
+    for result in results:
+        if result.get("status") in ("error", "unknown", "skipped"):
+            print(f"Execution detail: {result.get('ticker')} {result.get('status')}: {result.get('error', result.get('reason', ''))}")
     print("Done")
+    if any(r.get("status") in ("error", "unknown") for r in results):
+        sys.exit(1)
 
 
 if __name__ == "__main__":
