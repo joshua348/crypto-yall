@@ -504,7 +504,7 @@ def _send_email(results: list[dict], status_summary: str):
     """
 
     msg = MIMEMultipart("alternative")
-    summary = execution_summary(results, equity)
+    summary = status_summary
     msg["Subject"] = f"[Crypto Y'all] Execution: {summary}"
     msg["From"] = user
     msg["To"] = user
@@ -653,7 +653,7 @@ def main():
 
     save_trading_state(state)
 
-    summary = f"{len(results)} trade(s) executed | Equity: ${equity:,.2f}"
+    summary = execution_summary(results, equity)
     send_execution_notifications(results, summary)
     for result in results:
         if result.get("status") in ("error", "unknown", "skipped"):
