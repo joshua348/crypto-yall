@@ -27,6 +27,8 @@ from intraday_data_loader import fetch_all_intraday, HL_SYMBOL_MAP
 from aggressive_strategy import generate_aggressive_signals, classify_aggressive_signal
 from hyperliquid_executor import (
     ASSETS,
+    entry_size,
+    execution_summary,
     get_client,
     get_account_equity,
     get_open_positions,
@@ -169,7 +171,7 @@ def decide_trades(signals: dict, open_positions: dict, max_positions: int,
             "reason": f"pyramid add #{current_pyramid + 1} (osc re-entry)",
         })
 
-    slots = max_positions - len(remaining)
+    slots = max(0, max_positions - len(remaining))
 
     # Open new positions, prioritized by oscillator magnitude
     candidates = []
@@ -206,20 +208,18 @@ def execute_trade(info, exchange, trade: dict, capital: float, leverage: float) 
         resp = exchange.market_close(coin)
         return _parse_response(trade, resp, info, coin)
 
-    mid = get_mid_price(info, coin)
-    # Pyramid adds use smaller size
-    size_pct = PYRAMID_SIZE_PCT if trade["action"].startswith("pyramid_") else POSITION_SIZE_PCT
-    notional = max(capital * size_pct * leverage, 12.0)
-    raw_size = notional / mid
-    sz_decimals = get_size_decimals(info, coin)
-    size = round_size(raw_size, sz_decimals)
-    if size <= 0:
-        return {**trade, "status": "skipped", "reason": "Size rounded to zero"}
-
     try:
-        exchange.update_leverage(int(leverage), coin, True)
+        size = entry_size(info, exchange, coin, capital, leverage, PYRAMID_SIZE_PCT if trade["action"].startswith("pyramid_") else POSITION_SIZE_PCT)
+    except (ValueError, KeyError, TypeError, ArithmeticError) as e:
+        return {**trade, "status": "skipped", "reason": str(e)}
+
+    # Do not open at an unintended leverage if the exchange rejects the setting.
+    try:
+        leverage_result = exchange.update_leverage(int(leverage), coin, True)
+        if not isinstance(leverage_result, dict) or leverage_result.get("status") != "ok":
+            return {**trade, "status": "error", "error": f"Leverage update rejected: {leverage_result}"}
     except Exception as e:
-        print(f"Leverage warning for {coin}: {e}")
+        return {**trade, "status": "error", "error": f"Leverage update failed: {e}"}
 
     is_buy = trade["action"] in ("open_long", "pyramid_long")
     resp = exchange.market_open(coin, is_buy, size)
@@ -345,11 +345,16 @@ def main():
     state["last_signals"] = signals
     save_state(state)
 
-    summary = f"{len(results)} aggressive trade(s) | Equity: ${equity:,.2f}"
+    summary = execution_summary(results, equity)
     if results:
         _send_email(results, summary)
         _send_telegram(results, summary)
+    for result in results:
+        if result.get("status") in ("error", "unknown", "skipped"):
+            print(f"Execution detail: {result.get('ticker')} {result.get('status')}: {result.get('error', result.get('reason', ''))}")
     print("Done")
+    if any(r.get("status") in ("error", "unknown") for r in results):
+        sys.exit(1)
 
 
 if __name__ == "__main__":
