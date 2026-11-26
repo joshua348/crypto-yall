@@ -306,6 +306,9 @@ def main():
         print(f"Adopted existing positions: {state['owned_coins']}; no orders submitted")
         print("Normal Aggressive management resumes on the next run")
         return
+    if os.environ.get("AGGRESSIVE_HANDOVER_ONLY", "").lower() == "true":
+        print(f"Adoption already recorded for {state.get('owned_coins', [])}; no orders submitted")
+        return
     equity = get_account_equity(info, address)
     threshold = float(os.environ.get("AGGRESSIVE_DD_PCT", "3"))
     halted, state_update = check_daily_drawdown(state, equity, threshold)
