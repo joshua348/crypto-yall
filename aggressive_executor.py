@@ -53,34 +53,63 @@ def load_state() -> dict:
     gist_token = os.environ.get("GIST_TOKEN")
     gist_id = os.environ.get("AGGRESSIVE_GIST_ID")
     if not gist_token or not gist_id:
-        return {}
+        raise RuntimeError("Aggressive state credentials are required")
     resp = requests.get(
         f"https://api.github.com/gists/{gist_id}",
         headers={"Authorization": f"token {gist_token}"},
         timeout=15,
     )
-    if resp.status_code != 200:
-        return {}
+    resp.raise_for_status()
     files = resp.json().get("files", {})
     if STATE_FILENAME not in files:
-        return {}
+        raise RuntimeError("Aggressive state file is missing; refusing to trade")
     try:
-        return json.loads(files[STATE_FILENAME]["content"])
-    except Exception:
-        return {}
+        state = json.loads(files[STATE_FILENAME]["content"])
+        if not isinstance(state, dict):
+            raise ValueError("Expected a state object")
+        return state
+    except (ValueError, TypeError, KeyError) as exc:
+        raise RuntimeError("Cannot read Aggressive state; refusing to trade") from exc
 
 
 def save_state(state: dict):
     gist_token = os.environ.get("GIST_TOKEN")
     gist_id = os.environ.get("AGGRESSIVE_GIST_ID")
     if not gist_token or not gist_id:
-        return
-    requests.patch(
+        raise RuntimeError("Aggressive state credentials are required")
+    resp = requests.patch(
         f"https://api.github.com/gists/{gist_id}",
         headers={"Authorization": f"token {gist_token}"},
         json={"files": {STATE_FILENAME: {"content": json.dumps(state, indent=2)}}},
         timeout=15,
     )
+    resp.raise_for_status()
+
+
+def adopt_open_positions(state, positions, adoption_id):
+    """One-time bookkeeping only: never place orders or change leverage."""
+    if not adoption_id or state.get("position_adoption", {}).get("id") == adoption_id:
+        return False
+    supported = {HL_SYMBOL_MAP[t] for t in ASSETS}
+    unsupported = set(positions) - supported
+    if unsupported:
+        raise RuntimeError(f"Cannot manage unsupported positions: {sorted(unsupported)}")
+    previous = set(state.get("owned_coins", []))
+    newly_owned = set(positions) - previous
+    pyramids = {c: n for c, n in state.get("pyramid_state", {}).items() if c in positions}
+    # Imported positions have unknown add-on history; don't add more exposure.
+    for coin in newly_owned:
+        pyramids[coin] = 2
+    state["owned_coins"] = sorted(positions)
+    state["open_positions"] = {c: dict(p) for c, p in positions.items()}
+    state["pyramid_state"] = pyramids
+    state["position_adoption"] = {
+        "id": adoption_id,
+        "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "coins": sorted(positions),
+        "newly_owned": sorted(newly_owned),
+    }
+    return True
 
 
 # ── Signal computation ─────────────────────────────────────────────────────
@@ -265,6 +294,18 @@ def main():
         sys.exit(1)
 
     state = load_state()
+    adoption_id = os.environ.get("AGGRESSIVE_ADOPT_EXISTING_ID", "")
+    if adoption_id and state.get("position_adoption", {}).get("id") != adoption_id:
+        positions = get_open_positions(info, address)
+        adopt_open_positions(state, positions, adoption_id)
+        save_state(state)
+        verified = load_state()
+        if verified.get("position_adoption") != state["position_adoption"] or \
+           verified.get("owned_coins") != state["owned_coins"]:
+            raise RuntimeError("Position adoption could not be verified")
+        print(f"Adopted existing positions: {state['owned_coins']}; no orders submitted")
+        print("Normal Aggressive management resumes on the next run")
+        return
     equity = get_account_equity(info, address)
     threshold = float(os.environ.get("AGGRESSIVE_DD_PCT", "3"))
     halted, state_update = check_daily_drawdown(state, equity, threshold)
@@ -359,3 +400,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
