@@ -5,6 +5,10 @@ on:
     - cron: '7,37 * * * *'    # Every 30 minutes at :07 and :37 UTC
   workflow_dispatch: {}
 
+concurrency:
+  group: aggressive-live-trading
+  cancel-in-progress: false
+
 jobs:
   trade:
     runs-on: ubuntu-latest
@@ -25,6 +29,7 @@ jobs:
           HL_PRIVATE_KEY: ${{ secrets.HL_PRIVATE_KEY }}
           HL_ACCOUNT_ADDRESS: ${{ secrets.HL_ACCOUNT_ADDRESS }}
           HL_TESTNET: ${{ vars.HL_TESTNET }}
+          AGGRESSIVE_ADOPT_EXISTING_ID: 'single-bot-handover-2026-11-26'
           AGGRESSIVE_CAPITAL: ${{ vars.AGGRESSIVE_CAPITAL }}
           AGGRESSIVE_DD_PCT: ${{ vars.AGGRESSIVE_DD_PCT }}
           AGGRESSIVE_MAX_POSITIONS: ${{ vars.AGGRESSIVE_MAX_POSITIONS }}
